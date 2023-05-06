@@ -1,3 +1,4 @@
+"workspace from the workspace.json"
 function invalidValue(typ, val, key, parent = '') {
     const prettyTyp = prettyTypeName(typ);
     const parentText = parent ? ` on ${parent}` : '';
