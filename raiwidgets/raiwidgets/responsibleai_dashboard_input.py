@@ -334,11 +334,13 @@ class ResponsibleAIDashboardInput:
             aggregate_method = post_data[1]
             class_name = post_data[2]
             iou_thresh = post_data[3]
+            object_detection_cache = post_data[4]
             exp = self._analysis.compute_object_detection_metrics(
                 selection_indexes,
                 aggregate_method,
                 class_name,
-                iou_thresh
+                iou_thresh,
+                object_detection_cache
             )
             return {
                 WidgetRequestResponseConstants.data: exp
@@ -366,17 +368,9 @@ class ResponsibleAIDashboardInput:
         :rtype: Dict[str, List]
         """
         try:
-            true_y = post_data[0]
-            predicted_y = post_data[1]
-            aggregate_method = post_data[2]
-            class_name = post_data[3]
-            iou_thresh = post_data[4]
+            selection_indexes = post_data[0]
             exp = self._analysis.compute_question_answering_metrics(
-                true_y,
-                predicted_y,
-                aggregate_method,
-                class_name,
-                iou_thresh
+                selection_indexes
             )
             return {
                 WidgetRequestResponseConstants.data: exp

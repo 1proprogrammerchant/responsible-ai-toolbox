@@ -7,6 +7,7 @@ import React from "react";
 
 import { Cohort } from "../Cohort/Cohort";
 import { ErrorCohort } from "../Cohort/ErrorCohort";
+import { DatasetCohort } from "../DatasetCohort";
 import {
   ICausalAnalysisData,
   ICausalWhatIfData
@@ -38,6 +39,9 @@ export interface IModelAssessmentContext {
   errorCohorts: ErrorCohort[];
   readonly baseErrorCohort: ErrorCohort;
   readonly selectedErrorCohort: ErrorCohort;
+  datasetCohorts?: DatasetCohort[];
+  readonly baseDatasetCohort?: DatasetCohort;
+  readonly selectedDatasetCohort?: DatasetCohort;
 
   // jointDataset and modelMetadata should eventually be removed.
   // Instead, dataset and modelExplanationData should suffice.
@@ -141,15 +145,15 @@ export interface IModelAssessmentContext {
         selectionIndexes: number[][],
         aggregateMethod: string,
         className: string,
-        iouThresh: number,
+        iouThreshold: number,
+        objectDetectionCache: Map<string, [number, number, number]>,
         abortSignal: AbortSignal
       ) => Promise<any[]>)
     | undefined;
   requestQuestionAnsweringMetrics?:
     | ((
         selectionIndexes: number[][],
-        trueY: string[],
-        predictedY: string[]
+        abortSignal: AbortSignal
       ) => Promise<any[]>)
     | undefined;
   requestSplinePlotDistribution?: (
@@ -161,8 +165,16 @@ export interface IModelAssessmentContext {
     abortSignal: AbortSignal
   ) => Promise<number[]>;
   shiftErrorCohort(cohort: ErrorCohort): void;
-  addCohort(cohort: Cohort, switchNew?: boolean): void;
-  editCohort(cohort: Cohort, switchNew?: boolean): void;
+  addCohort(
+    cohort: Cohort,
+    datasetCohort?: DatasetCohort,
+    switchNew?: boolean
+  ): void;
+  editCohort(
+    cohort: Cohort,
+    datasetCohort?: DatasetCohort,
+    switchNew?: boolean
+  ): void;
   deleteCohort(cohort: ErrorCohort): void;
   setAsCategorical?(column: string, treatAsCategorical: boolean): void;
 }
@@ -172,6 +184,7 @@ export const defaultModelAssessmentContext: IModelAssessmentContext = {
   baseErrorCohort: {} as ErrorCohort,
   columnRanges: {},
   dataset: {} as IDataset,
+  datasetCohorts: [],
   deleteCohort: () => undefined,
   editCohort: () => undefined,
   errorCohorts: [],
@@ -183,6 +196,7 @@ export const defaultModelAssessmentContext: IModelAssessmentContext = {
   requestLocalFeatureExplanations: undefined,
   requestObjectDetectionMetrics: undefined,
   requestPredictions: undefined,
+  requestQuestionAnsweringMetrics: undefined,
   selectedErrorCohort: {} as ErrorCohort,
   setAsCategorical: () => undefined,
   shiftErrorCohort: () => undefined,

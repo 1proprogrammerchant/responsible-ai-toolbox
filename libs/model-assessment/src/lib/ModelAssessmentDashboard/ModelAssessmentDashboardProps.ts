@@ -119,13 +119,13 @@ export interface IModelAssessmentDashboardProps
     selectionIndexes: number[][],
     aggregateMethod: string,
     className: string,
-    iouThresh: number,
+    iouThreshold: number,
+    objectDetectionCache: Map<string, [number, number, number]>,
     abortSignal: AbortSignal
   ) => Promise<any[]>;
   requestQuestionAnsweringMetrics?: (
     selectionIndexes: number[][],
-    trueY: string[],
-    predictedY: string[]
+    abortSignal: AbortSignal
   ) => Promise<any[]>;
   requestBubblePlotData?: (
     filter: unknown[],

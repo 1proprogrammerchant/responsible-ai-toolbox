@@ -16,9 +16,11 @@ import pandas as pd
 from erroranalysis._internal.cohort_filter import FilterDataWithCohortFilters
 from erroranalysis._internal.process_categoricals import process_categoricals
 from raiutils.data_processing import convert_to_list
-from raiutils.exceptions import UserConfigValidationException
+from raiutils.exceptions import (SystemErrorException,
+                                 UserConfigValidationException)
 from raiutils.models import Forecasting, ModelTask, SKLearn
-from responsibleai._interfaces import Dataset, RAIInsightsData
+from responsibleai._interfaces import (Dataset, RAIInsightsData,
+                                       TabularDatasetMetadata)
 from responsibleai._internal._forecasting_wrappers import _wrap_model
 from responsibleai._internal.constants import (FileFormats, ManagerNames,
                                                Metadata,
@@ -234,7 +236,7 @@ class RAIInsights(RAIBaseInsights):
         self._feature_columns = \
             test.drop(columns=[target_column]).columns.tolist()
         self._feature_ranges = RAIInsights._get_feature_ranges(
-            test=test,
+            test=(self._large_test if self._large_test is not None else test),
             categorical_features=self.categorical_features,
             feature_columns=self._feature_columns,
             datetime_features=self._feature_metadata.datetime_features)
@@ -257,6 +259,14 @@ class RAIInsights(RAIBaseInsights):
         # keep managers at the end since they rely on everything above
         self._initialize_managers()
         self._try_add_data_balance()
+
+    def get_categorical_features_after_drop(self):
+        dropped_features = self._feature_metadata.dropped_features
+        if dropped_features is None:
+            return self.categorical_features
+        else:
+            return list(set(self.categorical_features) -
+                        set(dropped_features))
 
     def get_train_data(self):
         """Returns the training dataset after dropping
@@ -370,7 +380,8 @@ class RAIInsights(RAIBaseInsights):
         dropped_features = self._feature_metadata.dropped_features
         self._causal_manager = CausalManager(
             self.get_train_data(), self.get_test_data(), self.target_column,
-            self.task_type, self.categorical_features, self._feature_metadata)
+            self.task_type, self.get_categorical_features_after_drop(),
+            self._feature_metadata)
 
         self._counterfactual_manager = CounterfactualManager(
             model=self.model, train=self.get_train_data(),
@@ -392,7 +403,7 @@ class RAIInsights(RAIBaseInsights):
             self.model, self.get_train_data(), self.get_test_data(),
             self.target_column,
             self._classes,
-            categorical_features=self.categorical_features)
+            self.get_categorical_features_after_drop())
 
         self._managers = [self._causal_manager,
                           self._counterfactual_manager,
@@ -555,6 +566,17 @@ class RAIInsights(RAIBaseInsights):
                         f"Error finding unique values in column {column}. "
                         "Please check your test data.")
 
+        # Validate that the target column isn't continuous if the
+        # user is running classification scenario
+        # To address error thrown from sklearn here:  # noqa: E501
+        # https://github.com/scikit-learn/scikit-learn/blob/main/sklearn/utils/multiclass.py#L197
+        y_data = train[target_column]
+        if (task_type == ModelTask.CLASSIFICATION and
+                pd.api.types.is_float_dtype(y_data.dtype) and
+                np.any(y_data != y_data.astype(int))):
+            raise UserConfigValidationException(
+                "Target column type must not be continuous "
+                "for classification scenario.")
         # Check if any features exist that are not numeric, datetime, or
         # categorical.
         train_features = train.drop(columns=[target_column]).columns
@@ -574,6 +596,10 @@ class RAIInsights(RAIBaseInsights):
                 "The following string features were not "
                 "identified as categorical features: "
                 f"{non_categorical_or_time_string_columns}")
+
+        # Check if any of the data is missing in test and train data
+        self._validate_data_is_not_missing(test, "test")
+        self._validate_data_is_not_missing(train, "train")
 
         self._validate_feature_metadata(
             feature_metadata, train, task_type, model, target_column)
@@ -685,6 +711,17 @@ class RAIInsights(RAIBaseInsights):
                     if_train_data=False,
                     if_predictions=True
                 )
+
+    def _validate_data_is_not_missing(self, data, data_name):
+        """Validates that data is not missing (ie null)"""
+        list_of_feature_having_missing_values = []
+        for feature in data.columns.tolist():
+            if np.any(data[feature].isnull()):
+                list_of_feature_having_missing_values.append(feature)
+        if len(list_of_feature_having_missing_values) > 0:
+            raise UserConfigValidationException(
+                f"Features {list_of_feature_having_missing_values} "
+                f"have missing values in {data_name} data.")
 
     def _validate_feature_metadata(
             self, feature_metadata, train, task_type, model, target_column):
@@ -870,10 +907,11 @@ class RAIInsights(RAIBaseInsights):
             true_y = self.test[self.target_column]
 
         X_test = test_data.drop(columns=[self.target_column])
+        X_test_after_drop = self.get_test_data(X_test)
         filter_data_with_cohort = FilterDataWithCohortFilters(
             model=self.model,
-            dataset=X_test,
-            features=X_test.columns,
+            dataset=X_test_after_drop,
+            features=X_test_after_drop.columns,
             categorical_features=self.categorical_features,
             categories=self._categories,
             true_y=true_y,
@@ -913,6 +951,16 @@ class RAIInsights(RAIBaseInsights):
         dashboard_dataset.is_large_data_scenario = \
             True if self._large_test is not None else False
         dashboard_dataset.use_entire_test_data = False
+
+        dashboard_dataset.tabular_dataset_metadata = TabularDatasetMetadata()
+        dashboard_dataset.tabular_dataset_metadata.is_large_data_scenario = \
+            True if self._large_test is not None else False
+        dashboard_dataset.tabular_dataset_metadata.use_entire_test_data = False
+        dashboard_dataset.tabular_dataset_metadata.num_rows = \
+            len(self._large_test) \
+            if self._large_test is not None else len(self.test)
+        dashboard_dataset.tabular_dataset_metadata.feature_ranges = \
+            self._feature_ranges
 
         if self._feature_metadata is not None:
             dashboard_dataset.feature_metadata = \
@@ -1259,8 +1307,18 @@ class RAIInsights(RAIBaseInsights):
                 res_object[_MIN_VALUE] = test[col].min()
                 res_object[_MAX_VALUE] = test[col].max()
             else:
-                min_value = float(test[col].min())
-                max_value = float(test[col].max())
+                col_min = test[col].min()
+                col_max = test[col].max()
+                try:
+                    min_value = float(col_min)
+                    max_value = float(col_max)
+                except Exception as e:
+                    raise SystemErrorException(
+                        "Unable to convert min or max value "
+                        f"of feature column {col} to float. "
+                        f"min value of {col} is of type {type(col_min)} and "
+                        f"max value of {col} is of type {type(col_max)} "
+                        f"Original Excepton: {e}")
                 res_object[_RANGE_TYPE] = "integer"
                 res_object[_MIN_VALUE] = min_value
                 res_object[_MAX_VALUE] = max_value
