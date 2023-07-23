@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-export const FridgeMultilabelModelDebugging = {
+export const FridgeImageClassificationModelDebugging = {
   causalAnalysisData: {
     hasCausalAnalysisComponent: false
   },
@@ -19,16 +19,22 @@ export const FridgeMultilabelModelDebugging = {
     hasFeatureImportanceComponent: false
   },
   featureNames: ["image"],
+  isImageClassification: true,
   modelOverviewData: {
     hasModelOverviewComponent: true,
     initialCohorts: [
       {
         metrics: {
-          exactMatchRatio: "0.925",
-          hammingScore: "0.729"
+          accuracy: "0.97",
+          macroF1: "0.97",
+          macroPrecision: "0.97",
+          macroRecall: "0.97",
+          microF1: "0.97",
+          microPrecision: "0.97",
+          microRecall: "0.97"
         },
         name: "All data",
-        sampleSize: "10"
+        sampleSize: "134"
       }
     ]
   }
